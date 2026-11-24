@@ -13,3 +13,6 @@ coverage
 Thumbs.db
 .vscode/*
 !.vscode/extensions.json
+
+# 개인 계획서 (저장소에 올리지 않음)
+사이드프로젝트_*.md
