@@ -18,17 +18,30 @@ dev     ●──●──────●─────●──────●
 
 ## 작업 브랜치 이름
 
-`<타입>/<짧은-설명>` 형식, 소문자와 하이픈만 사용.
+`<타입>/<무엇을-바꾸는지>` 형식, 소문자와 하이픈만 사용.
+
+- **일정이 아니라 내용으로 짓는다.** `week1-...`, `day3`처럼 언제 했는지가 아니라 무엇이 바뀌는지가 보여야 한다. 주차 정보는 `main` 태그(`week-1`)에 남긴다.
+- 이름을 짓기 어렵다면 브랜치가 너무 크다는 신호다. 한 브랜치에는 하나의 변경만 담는다.
 
 | 타입 | 용도 | 예시 |
 |---|---|---|
-| `feat/` | 새 기능 | `feat/week1-skeleton`, `feat/inquiry-webhook` |
+| `feat/` | 새 기능 | `feat/inquiry-webhook`, `feat/approval-page` |
 | `fix/` | 버그 수정 | `fix/duplicate-send` |
 | `refactor/` | 동작 변화 없는 구조 개선 | `refactor/llm-provider` |
 | `test/` | 테스트 추가·수정 | `test/concurrent-approve` |
 | `docs/` | 문서 | `docs/eval-v1` |
 | `chore/` | 설정, 의존성, CI | `chore/ci-mysql-service` |
 | `hotfix/` | `main`에서 발견된 급한 문제 (`main`에서 분기) | `hotfix/migration-error` |
+
+### 예시: 1주차를 브랜치로 나누면
+
+| 브랜치 | 내용 |
+|---|---|
+| `chore/monorepo-setup` | npm workspaces, TypeScript·ESLint 공통 설정, 앱 폴더 |
+| `chore/docker-compose` | MySQL, Redis 컨테이너 |
+| `feat/db-schema` | Prisma 스키마와 첫 마이그레이션 |
+| `chore/ci-pipeline` | GitHub Actions (lint, 타입 체크, 테스트, 빌드) |
+| `feat/llm-provider` | `LlmProvider` 인터페이스, `fake` 구현, `claude -p` 러너 스파이크 |
 
 ## 흐름
 
