@@ -1,0 +1,180 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// 문의 처리 상태. sent로는 approved에서만 갈 수 있다 (조건부 UPDATE로 보장).
+enum InquiryStatus {
+  received
+  classified
+  drafted
+  approved
+  sent
+  handed_off
+  failed
+}
+
+enum Urgency {
+  low
+  normal
+  high
+}
+
+enum DraftStatus {
+  pending
+  approved
+  rejected
+}
+
+enum LlmCallStatus {
+  success
+  invalid_output
+  error
+  timeout
+  rate_limited
+}
+
+model Store {
+  id            Int      @id @default(autoincrement())
+  name          String   @db.VarChar(100)
+  // 웹훅 HMAC 서명 검증용. 로컬 개발·mock 쇼핑몰 전용 값이다.
+  webhookSecret String   @db.VarChar(128)
+  // 배송·교환·환불 정책 원문. 답변 초안의 근거로 쓴다.
+  policyDoc     String   @db.Text
+  createdAt     DateTime @default(now())
+
+  inquiries Inquiry[]
+  reviews   Review[]
+  briefings Briefing[]
+}
+
+model Inquiry {
+  id             Int           @id @default(autoincrement())
+  storeId        Int
+  // 쇼핑몰 쪽 문의 ID. (storeId, externalId) 유니크로 같은 웹훅이 두 번 와도 1건만 저장한다.
+  externalId     String        @db.VarChar(100)
+  body           String        @db.Text
+  status         InquiryStatus @default(received)
+  category       String?       @db.VarChar(50)
+  urgency        Urgency?
+  confidence     Float?
+  // 분류 결과 원문 (검증 전후 비교와 Eval용)
+  classification Json?
+  // handed_off 사유: low_confidence, injection_suspected, refund_or_legal, agent_unavailable
+  handoffReason  String?       @db.VarChar(50)
+  failureReason  String?       @db.VarChar(255)
+  // 쇼핑몰이 알려 준 문의 시각 (우리가 받은 시각은 createdAt)
+  receivedAt     DateTime
+  sentAt         DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  store    Store     @relation(fields: [storeId], references: [id])
+  drafts   Draft[]
+  llmCalls LlmCall[]
+
+  @@unique([storeId, externalId])
+  // 상점별 상태 목록 화면 (승인 대기 등)
+  @@index([storeId, status, createdAt])
+  // 오래 멈춘 작업을 찾아 끝 상태로 보내는 정리 작업
+  @@index([status, updatedAt])
+}
+
+model Draft {
+  id         Int         @id @default(autoincrement())
+  inquiryId  Int
+  version    Int         @default(1)
+  // 에이전트가 만든 원문
+  body       String      @db.Text
+  // 사람이 수정해서 승인한 내용 (수정 없이 승인하면 null)
+  finalBody  String?     @db.Text
+  // 근거로 쓴 정책 항목
+  policyRefs Json
+  status     DraftStatus @default(pending)
+  decidedAt  DateTime?
+  createdAt  DateTime    @default(now())
+
+  inquiry Inquiry @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+
+  @@unique([inquiryId, version])
+}
+
+model Review {
+  id            Int      @id @default(autoincrement())
+  storeId       Int
+  externalId    String   @db.VarChar(100)
+  rating        Int      @db.TinyInt
+  body          String   @db.Text
+  // 고정된 불만 유형 목록 중 하나 (평가 가능하게). 아직 분류 전이면 null
+  complaintType String?  @db.VarChar(50)
+  postedAt      DateTime
+  createdAt     DateTime @default(now())
+
+  store    Store     @relation(fields: [storeId], references: [id])
+  llmCalls LlmCall[]
+
+  @@unique([storeId, externalId])
+  @@index([storeId, postedAt])
+}
+
+model Briefing {
+  id        Int      @id @default(autoincrement())
+  storeId   Int
+  date      DateTime @db.Date
+  // 섹션별 { status, data, error }. 한 섹션이 실패해도 나머지는 저장·표시한다.
+  sections  Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id])
+
+  // 상점·날짜당 1건. 다시 실행하면 덮어쓴다.
+  @@unique([storeId, date])
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  storeId    Int?
+  entityType String   @db.VarChar(50)
+  entityId   Int
+  action     String   @db.VarChar(50)
+  // human | system | agent
+  actor      String   @db.VarChar(20)
+  before     Json?
+  after      Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model LlmCall {
+  id            Int           @id @default(autoincrement())
+  // classify | draft | review_classify | briefing | eval
+  kind          String        @db.VarChar(30)
+  // claude-cli | fake
+  provider      String        @db.VarChar(30)
+  model         String        @db.VarChar(50)
+  promptVersion String        @db.VarChar(30)
+  status        LlmCallStatus
+  attempt       Int           @default(1)
+  durationMs    Int
+  inputTokens   Int?
+  outputTokens  Int?
+  errorMessage  String?       @db.Text
+  inquiryId     Int?
+  reviewId      Int?
+  createdAt     DateTime      @default(now())
+
+  inquiry Inquiry? @relation(fields: [inquiryId], references: [id], onDelete: SetNull)
+  review  Review?  @relation(fields: [reviewId], references: [id], onDelete: SetNull)
+
+  @@index([kind, createdAt])
+  @@index([inquiryId])
+  @@index([reviewId])
+}

@@ -13,3 +13,6 @@ coverage
 Thumbs.db
 .vscode/*
 !.vscode/extensions.json
+
+# Prisma 생성 코드 (npm run db:generate)
+apps/api/src/generated
