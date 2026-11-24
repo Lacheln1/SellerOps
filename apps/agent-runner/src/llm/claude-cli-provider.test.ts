@@ -232,3 +232,88 @@ describe('ClaudeCliProvider 실패', () => {
     expect(error.message).not.toContain(secret);
   });
 });
+
+// 2026-11-24 스파이크에서 실제 claude 2.1.52가 돌려준 출력 (session_id, uuid는 제외).
+const REAL_ENVELOPE = {
+  type: 'result',
+  subtype: 'success',
+  is_error: false,
+  duration_ms: 4854,
+  duration_api_ms: 4715,
+  num_turns: 2,
+  result:
+    'This inquiry has been classified as **shipping** with **high urgency** and **0.98 confidence**.',
+  stop_reason: null,
+  total_cost_usd: 0.004979000000000001,
+  usage: {
+    input_tokens: 2484,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 499,
+    service_tier: 'standard',
+  },
+  modelUsage: {
+    'claude-haiku-4-5-20251001': {
+      inputTokens: 2484,
+      outputTokens: 499,
+      costUSD: 0.004979000000000001,
+    },
+  },
+  permission_denials: [],
+  structured_output: { category: 'shipping', confidence: 0.98 },
+};
+
+describe('ClaudeCliProvider 실제 출력 형식', () => {
+  it('실제 claude 출력에서 데이터와 토큰, 모델 이름을 읽는다', async () => {
+    const { provider } = providerWith(ok(REAL_ENVELOPE));
+
+    const result = await provider.complete(request());
+
+    expect(result.data).toEqual({ category: 'shipping', confidence: 0.98 });
+    expect(result.meta).toMatchObject({
+      model: 'claude-haiku-4-5-20251001',
+      inputTokens: 2484,
+      outputTokens: 499,
+    });
+  });
+
+  it('result에 설명 문장이 있어도 structured_output을 우선한다', async () => {
+    const { provider } = providerWith(ok(REAL_ENVELOPE));
+
+    // result는 JSON이 아닌 문장이므로 이것을 읽었다면 invalid_output이 됐을 것이다.
+    await expect(provider.complete(request())).resolves.toBeDefined();
+  });
+});
+
+describe('ClaudeCliProvider 모델 선택', () => {
+  const modelOf = async (env: NodeJS.ProcessEnv, tier: 'fast' | 'smart') => {
+    const calls: string[][] = [];
+    const provider = new ClaudeCliProvider({
+      env,
+      command: { command: 'claude', prefixArgs: [] },
+      workDir: '/tmp/sellerops-test',
+      runner: async (_command, args) => {
+        calls.push(args);
+        return ok({ structured_output: { category: 'other', confidence: 1 } });
+      },
+    });
+    await provider.complete(request({ tier }));
+    return calls[0]![calls[0]!.indexOf('--model') + 1];
+  };
+
+  it('환경변수가 없으면 별칭을 쓴다', async () => {
+    expect(await modelOf({}, 'fast')).toBe('haiku');
+    expect(await modelOf({}, 'smart')).toBe('sonnet');
+  });
+
+  it('CLAUDE_MODEL_FAST / CLAUDE_MODEL_SMART로 모델을 바꾼다', async () => {
+    const env = { CLAUDE_MODEL_FAST: 'claude-haiku-5-5', CLAUDE_MODEL_SMART: 'claude-sonnet-5-5' };
+
+    expect(await modelOf(env, 'fast')).toBe('claude-haiku-5-5');
+    expect(await modelOf(env, 'smart')).toBe('claude-sonnet-5-5');
+  });
+
+  it('빈 문자열 환경변수는 무시한다', async () => {
+    expect(await modelOf({ CLAUDE_MODEL_FAST: '' }, 'fast')).toBe('haiku');
+  });
+});

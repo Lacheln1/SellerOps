@@ -26,6 +26,8 @@ export interface ClaudeCliProviderOptions {
   /** claude를 실행할 폴더. 프로젝트의 CLAUDE.md·설정을 읽지 않도록 빈 폴더를 쓴다. */
   workDir?: string;
   defaultTimeoutMs?: number;
+  /** 모델 환경변수(CLAUDE_MODEL_FAST, CLAUDE_MODEL_SMART)를 읽을 환경. 기본은 process.env */
+  env?: NodeJS.ProcessEnv;
 }
 
 interface Envelope {
@@ -56,7 +58,14 @@ export class ClaudeCliProvider implements LlmProvider {
   private readonly defaultTimeoutMs: number;
 
   constructor(options: ClaudeCliProviderOptions = {}) {
-    this.models = { ...DEFAULT_MODELS, ...options.models };
+    // 별칭(haiku, sonnet)이 가리키는 모델은 설치된 CLI 버전에 따라 다르다.
+    // 특정 모델을 쓰려면 CLAUDE_MODEL_FAST / CLAUDE_MODEL_SMART에 전체 모델 이름을 넣는다.
+    const env = options.env ?? process.env;
+    this.models = {
+      fast: env.CLAUDE_MODEL_FAST || DEFAULT_MODELS.fast,
+      smart: env.CLAUDE_MODEL_SMART || DEFAULT_MODELS.smart,
+      ...options.models,
+    };
     this.command = options.command ?? resolveClaudeCommand();
     this.runner = options.runner ?? runProcess;
     this.workDir = options.workDir ?? path.join(tmpdir(), 'sellerops-agent-runner');
