@@ -17,7 +17,8 @@
     "format:check": "prettier --check .",
     "infra:up": "docker compose up -d --wait",
     "infra:down": "docker compose down",
-    "infra:reset": "docker compose down -v"
+    "infra:reset": "docker compose down -v",
+    "test:integration": "npm run test:integration --workspaces --if-present"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
